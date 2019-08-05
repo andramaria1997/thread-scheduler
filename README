@@ -1,0 +1,81 @@
+Copyright: Andra-Maria DANCIU
+
+                                     README
+
+
+-------------------------- Planificator de Threaduri --------------------------
+
+
+# Compile:
+
+   $ make -f Makefile
+   ---> create libscheduler.so
+
+# Run tests:
+
+   $ make -f Makefile.checker
+
+# Struct scheduler_t:
+
+ -> obiectul "so_scheduler" pastreaza pointeri catre toate threadurile aflate
+    in sistem, grupate dupa stare (running, ready, waiting)
+ -> lock-ul schedulerului este utilizat impreuna cu variabila conditie a
+    fiecarui thread in implementarea schimbarii de context (wait si signal)
+ -> se pastreaza cuanta de timp si numarul de evenimente posibile
+
+
+# Struct so_thread_t [1]:
+
+ -> threadurile sunt stocate sub forma de arbore (fiecare thread detine o lista
+    de copii, si asteapta terminarea executiei acestora)
+ -> fiecare thread detine o prioritate si o cuanta de timp initializata cu
+    o valoare data de scheduler, decrementata la fiecare instructiune si
+    resetata la fiecare preemptie
+ -> planificarea threadurilor se face in baza variabilelor conditie detinute de
+    fiecare thread, la care threadul asteapta sau primeste semnal de executie
+
+# Struct thread_list_t [2]:
+
+ -> vector de pointeri la so_thread_t alocat dinamic
+ -> DEZAVANTAJ: stergere in O(n) :(
+
+# Struct ready_pool_t [3]:
+
+ -> detine un nr de liste de threaduri egal cu numarul de prioritati diferite
+    din sistem (SO_MAX_PRO + 1), pentru a avea posibilitatea de a rula mereu
+    threadurile dintr-un singur bucket
+ -> 1 bucket per prioritate, se alege mereu prioritatea maxima pana cand toate
+    threadurile din acel bucket isi termina complet executia
+ -> pentru fiecare bucket in parte, se tine indexul threadului din bucket care
+    se afla in executie la pasul curent dupa algoritmul Round Robin:
+    threadurile dintr-un bucket sunt executate la rand, circular; dupa ce sunt
+    executate toate threadurile din bucketul cu prioritate maxima, se trece la
+    urmatorul
+
+
+# Struct waiting_pool_t [4]:
+
+ -> detine un nr de liste de threaduri egal cu numarul de evenimente diferite
+    din sistem (SO_MAX_PRO + 1), pentru a avea posibilitatea de a muta un
+    intreg bucket din waiting pool in ready pool
+ -> 1 bucket per eveniment, la fiecare so_wait threadul este introdus in
+    bucketul corespunzator, iar la so_signal intreg bucketul de threaduri este
+    mutat in ready pool (corespondent prioritatilor fiecaruia)
+
+
+(*) Structurile [1], [2], [3] si [4] fac parte dintr-un modul separat destinat
+    structurarii threadurilor si gruparii acestora dupa starea in care se afla
+    pentru a usura planificarea (ready si waiting - pentru running nu este
+    nevoie, MEREU este un singur thread in starea running)
+
+(*) API-ul modulului ofera, printre altele, functia get_next_ready pentru a
+    afla urmatorul thread ce trebuie rulat dupa algoritmul round robin si
+    functia move_to_ready pentru a scoate toate threadurile din wait la
+    semnalarea unui eveniment (! esentiale pentru a face schedule foarte usor)
+
+(*) Operatia so_wait este costisitoare din cauza faptului ca stergerea unui
+    thread din ready pool se face in O(n), unde n este numarul de threaduri din
+    bucketul acelei prioritati. Ar fi fost mai eficienta implementarea listelor
+    ca liste dublu inlantuite circulare pentru realizarea stergerii in O(1),
+    dar pentru implementarea acestei teme numarul de threaduri este suficient
+    de mic incat sa nu afecteze mult
